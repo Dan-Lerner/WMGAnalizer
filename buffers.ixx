@@ -183,7 +183,7 @@ namespace buffers
         
         bool operator==(ring_iterator const& other) const noexcept
         {
-            return index_ != other.index_;
+            return index_ == other.index_;
         }
         
         typename ring_iterator::reference operator*() /*const*/ noexcept
@@ -234,6 +234,11 @@ namespace buffers
         ring_iterator& operator=(ring_iterator&& other) noexcept
         {
             return operator=(other);
+        }
+
+        int index()
+        {
+            return index_;
         }
 
     private:

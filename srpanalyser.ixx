@@ -1,6 +1,7 @@
 module;
 #include<functional>
 #include<algorithm>
+#include<iterator>
 export module srpanalyzer;
 
 import periodanalizer;
@@ -36,6 +37,21 @@ namespace srp_analyzer
 
         bool is_valid() const noexcept { return id != invalid; }
         bool set_invalid() noexcept { id = invalid; }
+
+        bool operator<(notch& other) const noexcept
+        {
+            return id < other.id;
+        }
+
+        bool operator==(notch& other) const noexcept
+        {
+            return id == other.id;
+        }
+
+        bool operator!=(notch& other) const noexcept
+        {
+            return id != other.id;
+        }
 
         unsigned short id{ invalid };
         T time{};
@@ -76,10 +92,14 @@ namespace srp_analyzer
             return *it_notches_++;
         }
 
-        bool add_new(unsigned short id, T time)
+        void add_new(unsigned short id, T time)
         {
             raw_notches_.emplace_back(id, time - start_time_);
-            return true;
+        }
+
+        bool must_add_new()
+        {
+            return !raw_notches_.empty();
         }
 
         void cancel_period() noexcept
@@ -96,8 +116,6 @@ namespace srp_analyzer
 
         void add_new_notches(double correction)
         {
-            if (raw_notches_.empty())
-                return;
             for (auto&& n : raw_notches_) {
                 auto it_end = notches_.end();
                 auto it = std::find_if(notches_.begin(), it_end, 
@@ -108,7 +126,7 @@ namespace srp_analyzer
                     notches_.emplace_back(n.id, static_cast<T>(n.time * correction));
             }
             std::sort(notches_.begin(), notches_.end(), 
-                [](notch_type a, notch_type b) { return a.time < b.time; });
+                [](auto&& a, auto&& b) { return a.time < b.time; });
         }
 
         notch_type get_notch(unsigned short id)
@@ -248,7 +266,8 @@ namespace srp_analyzer
         {
             if (!is_period_stable())
                 return false;
-            return notches_.add_new(id, norm_time_);
+            notches_.add_new(id, norm_time_);
+            return true;
         }
 
     private:
@@ -271,18 +290,18 @@ namespace srp_analyzer
 
             if (etalon_.valid()) {
                 auto correction = etalon_.get_period() / static_cast<double>(period);
-                notches_.add_new_notches(correction);
-
+                if (notches_.must_add_new())
+                    notches_.add_new_notches(correction);
                 auto bdc_notch = notches_.get_notch(bdc_id);
                 if (bdc_notch.is_valid())
                 { 
-                    auto bdc_norm_time = start.x + bdc_notch.time / correction;
-                    auto bdc_index = index_by_time(bdc_norm_time);
-                    if (last_bdc_ != undefined) {
-                        normalize_period(last_bdc_, bdc_index);
-                        callback_wmg_(wmg_buffer_.it(last_bdc_), wmg_buffer_.it(bdc_index));
+                    auto it_bdc_ = point_by_time(start.x + bdc_notch.time / correction);
+                    if (bdc_found_) {
+                        normalize_period(it_last_bdc_, it_bdc_);
+                        callback_wmg_(it_last_bdc_, it_bdc_);
                     }
-                    last_bdc_ = bdc_index;
+                    it_last_bdc_ = it_bdc_;
+                    bdc_found_ = true;
                 }
             }
             notches_.start_period(static_cast<omega_type>(end.x));
@@ -292,31 +311,32 @@ namespace srp_analyzer
         void cb_period_lost() noexcept
         {
             period_found_ = false;
-            last_bdc_ = undefined;
+            bdc_found_ = false;
             notches_.cancel_period();
             //callback_lost_();
         }
 
-        void normalize_period(int start, int end)
+        void normalize_period(it_wmg_type start, it_wmg_type end)
         {
-            auto start_omega = wmg_buffer_[start].omega;
-            double correction = one_cycle / static_cast<double>((wmg_buffer_[end].omega - start_omega));
-            for (int i = start; i != end; i = wmg_buffer_.next(i))
-                wmg_buffer_[i].omega = correction * (wmg_buffer_[i].omega - start_omega);
+            auto start_omega = (*start).omega;
+            double correction = one_cycle / static_cast<double>(((*end).omega - start_omega));
+            auto omega_calc = [&](auto&& pt) { pt.omega = correction * (pt.omega - start_omega); };
+            std::for_each(start, end, omega_calc);
         }
         
-        int index_by_time(omega_type time) // must be refactored to the binary search
+        auto point_by_time(omega_type time)
         {
-            auto end = wmg_buffer_.tail();
-            for (auto i = wmg_buffer_.last(); i != end; i = wmg_buffer_.prev(i))
-                if (time > wmg_buffer_[i].omega)
-                    return i;
-            return undefined;
+            auto end = wmg_buffer_.rend();
+            auto it = wmg_buffer_.rbegin();
+            for (; it != end; ++it)
+                if (time > (*it).omega)
+                    break;
+            return it.base();
         }
 
     private:
 #ifdef _DEBUG
-    public:                             //!!!!!!!!!!!!!!!
+    public:
 #endif // DEBUG
         point_type period_start;
         point_type period_end;
@@ -333,8 +353,9 @@ namespace srp_analyzer
         int stability_{};
         bool save_sample_{ false };
         bool period_found_{ false };
+        bool bdc_found_{ false };
 
-        int last_bdc_{ undefined };
+        it_wmg_type it_last_bdc_;
 
         elalon<Tt> etalon_;
         wmg_buffer_type wmg_buffer_;

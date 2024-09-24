@@ -1,6 +1,7 @@
 module;
 #include<math.h>
 #include<concepts>
+#include<algorithm>
 #include<iterator>
 #include<functional>
 export module periodanalizer;
@@ -375,18 +376,18 @@ namespace trend_analizer
         }
 
     private:
-        bool is_extremum(tracker& trek, const point_type& pt, tracker& opp_trek) 
+        bool is_extremum(tracker& track, const point_type& pt, tracker& opp_track) 
         {
-            trek.last_trend = pt;
-            if (fabs(static_cast<double>(trek.last_trend.x - trek.last_extremum.x)) > noise_period_) {
-                if (!trek.trend_found) {
-                    trek.trend_found = true;
-                    if (opp_trek.trend_found) {
-                        callback_(trek.last_extremum);
+            track.last_trend = pt;
+            if (fabs(static_cast<double>(track.last_trend.x - track.last_extremum.x)) > noise_period_) {
+                if (!track.trend_found) {
+                    track.trend_found = true;
+                    if (opp_track.trend_found) {
+                        callback_(track.last_extremum);
                         return true;
                     }
                 }
-                opp_trek.init(pt);
+                opp_track.init(pt);
             }
             return false;
         }
